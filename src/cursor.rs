@@ -32,6 +32,35 @@ pub trait Cursor<'txn> {
         }
     }
 
+    /// Moves cursor to first key/data pair in database
+    fn to_first(&self) -> Result<()> {
+        self.get(None, None, ffi::MDB_FIRST).map(|_| ())
+    }
+
+    fn to_key(&self, key: &[u8]) -> Result<()> {
+        self.get(Some(key), None, ffi::MDB_SET_RANGE).map(|_| ())
+    }
+
+    /// Moves cursor to next data item
+    fn to_next(&self) -> Result<()> {
+        self.get(None, None, ffi::MDB_NEXT).map(|_| ())
+    }
+
+    /// Returns key/data pair at current position
+    fn get_current(&self) -> Option<(&'txn [u8], &'txn [u8])> {
+        unsafe {
+            let mut key = slice_to_val(None);
+            let mut data = slice_to_val(None);
+            match ffi::mdb_cursor_get(self.cursor(), &mut key, &mut data, ffi::MDB_GET_CURRENT) {
+                ffi::MDB_SUCCESS => Some((val_to_slice(key), val_to_slice(data))),
+                // EINVAL can occur when the cursor was previously seeked to a non-existent value,
+                // e.g. iter_from with a key greater than all values in the database.
+                ffi::MDB_NOTFOUND | EINVAL => None,
+                error => panic!("mdb_cursor_get returned an unexpected error: {}", error),
+            }
+        }
+    }
+
     /// Iterate over database items. The iterator will begin with item next
     /// after the cursor, and continue until the end of the database. For new
     /// cursors, the iterator will begin with the first item in the database.
